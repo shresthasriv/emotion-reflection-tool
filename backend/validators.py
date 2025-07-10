@@ -60,19 +60,15 @@ def is_only_special_characters(text: str) -> bool:
 
 
 def is_mostly_numbers(text: str) -> bool:
-    # Check if text is purely numeric (with optional spaces/punctuation)
     if re.match(r'^[\d\s\.,\-\+\(\)]+$', text):
         return True
-    
-    # Check if text is mostly numbers
+
     digit_count = sum(1 for c in text if c.isdigit())
     letter_count = sum(1 for c in text if c.isalpha())
-    
-    # If there are digits but very few letters, it's probably just numbers
+
     if digit_count > 0 and letter_count < 3:
         return True
-    
-    # If more than 70% is digits, reject it
+
     if len(text) > 0 and digit_count / len(text) > 0.7:
         return True
     
