@@ -1,7 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-import random
+from fastapi.responses import JSONResponse
+
 from schema import ReflectionInput, EmotionResponse
+from emotion_service import emotion_analyzer
+from validators import validate_reflection_text
+from exceptions import handle_analysis_error, EmotionAnalysisError
+
 app = FastAPI()
 
 app.add_middleware(
@@ -12,34 +17,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(EmotionAnalysisError)
+async def emotion_analysis_exception_handler(request: Request, exc: EmotionAnalysisError):
+    http_exception = handle_analysis_error(exc)
+    return JSONResponse(
+        status_code=http_exception.status_code,
+        content=http_exception.detail
+    )
 
-def analyze_emotion(text: str) -> EmotionResponse:
-    text_lower = text.lower()
-
-    if any(word in text_lower for word in ["nervous", "anxious", "worried", "scared"]):
-        return EmotionResponse(emotion="Anxious", confidence=round(random.uniform(0.75, 0.95), 2))
-    elif any(word in text_lower for word in ["happy", "excited", "joy", "great", "amazing"]):
-        return EmotionResponse(emotion="Happy", confidence=round(random.uniform(0.80, 0.98), 2))
-    elif any(word in text_lower for word in ["sad", "depressed", "down", "upset", "disappointed"]):
-        return EmotionResponse(emotion="Sad", confidence=round(random.uniform(0.70, 0.90), 2))
-    elif any(word in text_lower for word in ["angry", "mad", "furious", "annoyed", "frustrated"]):
-        return EmotionResponse(emotion="Angry", confidence=round(random.uniform(0.65, 0.85), 2))
-    elif any(word in text_lower for word in ["calm", "peaceful", "relaxed", "content"]):
-        return EmotionResponse(emotion="Calm", confidence=round(random.uniform(0.75, 0.95), 2))
-    else:
-        return EmotionResponse(emotion="Neutral", confidence=round(random.uniform(0.60, 0.80), 2))
-
-@app.get("/")
-async def root():
-    return {"message": "Emotion Reflection API"}
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred"
+        }
+    )
 
 @app.post("/analyze", response_model=EmotionResponse)
-async def analyze_reflection(reflection: ReflectionInput):
-    if not reflection.text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
-    result = analyze_emotion(reflection.text)
-    return result
+async def analyze_reflection(reflection: ReflectionInput) -> EmotionResponse:
+    try:
+        validated_text = validate_reflection_text(reflection.text)
+        result = emotion_analyzer.analyze_emotion(validated_text)
+        return result
+        
+    except EmotionAnalysisError as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during analysis"
+        )
 
 if __name__ == "__main__":
     import uvicorn
